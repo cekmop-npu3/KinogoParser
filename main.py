@@ -31,24 +31,35 @@ class IframeParams(TypedDict):
     iframeUrl: Optional[str | list]
 
 
+class Cookies(TypedDict):
+    __ddg1: str
+    PHPSESSID: str
+
+
 class Kinogo:
     headers = {
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 OPR/107.0.0.0',
         'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
     }
     cookies = {
-        '__ddg1_': 'P0OsT6otGLfrxtCZCD7g',
-        'PHPSESSID': '48da239363571ed00e75e5e749af8283',
         '__ddg3': 'bUiOBuOEfO5BEPty'
     }
+
+    async def getCookies(self, main_url: str) -> Cookies:
+        async with ClientSession() as session:
+            async with session.get(
+                url=main_url,
+                headers=self.headers,
+                cookies=self.cookies
+            ) as response:
+                return dict(response.cookies)
 
     async def iframeParams(self, page_url: str) -> IframeParams:
         async with ClientSession() as session:
             async with session.get(
                 url=page_url,
                 headers=self.headers,
-                cookies=self.cookies,
-                ssl=False
+                cookies=self.cookies
             ) as response:
                 return {
                     'filmName': Bs(await response.text(), 'lxml').find('div', class_='fullstory__title').find('h1').text,
@@ -127,7 +138,8 @@ class Kinogo:
         return f'{path_}/Segments.txt'
 
     async def downloadMP4(self, url: str) -> None:
-        self.cookies['viewed_ids'] = search(r'(\d+)', url).group()
+        self.cookies.update(**(await self.getCookies(url.split(regex := search(r'(\d+)', url).group())[0])))
+        self.cookies['viewed_ids'] = regex
         film_name = (params := await self.iframeParams(url)).get('filmName')
         self.makeDir(path_ := f'Films/{self.cookies.get("viewed_ids")}')
         semaphore = Semaphore(30)
