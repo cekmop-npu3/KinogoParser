@@ -1,5 +1,5 @@
 from aiohttp import ClientSession
-from asyncio import run, TaskGroup, sleep, Semaphore
+from asyncio import run, TaskGroup, sleep, Semaphore, create_subprocess_exec
 from aiofiles import open as aio_open
 
 from bs4 import BeautifulSoup as Bs
@@ -9,36 +9,14 @@ from json import loads
 from os import mkdir, listdir, PathLike
 from shutil import rmtree
 from os.path import exists
-from subprocess import run as sub_run
 
-from typing import TypedDict, Optional
-
-
-class StreamParams(TypedDict):
-    url: str
-    csrfToken: Optional[str]
-    iframeUrl: str
-    streamHref: Optional[str]
+from utils import StreamParams, VideoParams, Cookies, ApiUtils, Singleton, CookieException
 
 
-class VideoParams(TypedDict):
-    url: str
-    params: dict[int, str]
-
-
-class Cookies(TypedDict):
-    __ddg1: str
-    PHPSESSID: str
-
-
-class Kinogo:
-    headers = {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 OPR/107.0.0.0',
-        'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
-    }
-    cookies = {
-        '__ddg3': 'bUiOBuOEfO5BEPty'
-    }
+class KinoGo(metaclass=Singleton):
+    def __init__(self, api_utils: ApiUtils.__class__) -> None:
+        self.headers = api_utils.headers
+        self.cookies = api_utils.cookies
 
     async def loadCookies(self, main_url: str) -> Cookies:
         async with ClientSession() as session:
@@ -47,6 +25,8 @@ class Kinogo:
                 headers=self.headers,
                 cookies=self.cookies
             ) as response:
+                if response.status == 403:
+                    raise CookieException('Cookies have expired')
                 return dict(response.cookies)
 
     async def iframeUrl(self, page_url: str) -> str:
@@ -136,9 +116,18 @@ class Kinogo:
         semaphore = Semaphore(30)
         async with TaskGroup() as tg:
             [tg.create_task(self.loadFromSegment(semaphore, path_, seg)) for seg in await self.videoSegments(await self.videoParams(await self.redirectUrl(await self.streamParams(await self.iframeUrl(url)))))]
-        sub_run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', self.makeTXT(path_), '-c', 'copy', f'Films/{regex}.mp4'])
+        process = await create_subprocess_exec(*['ffmpeg', '-f', 'concat', '-safe', '0', '-i', self.makeTXT(path_), '-c', 'copy', f'Films/{regex}.mp4'])
+        await process.wait()
         rmtree(path_, ignore_errors=True)
 
 
+async def main(*urls) -> None:
+    async with TaskGroup() as tg:
+        [tg.create_task(KinoGo(ApiUtils).downloadMP4(url)) for url in urls]
+
+
 if __name__ == '__main__':
-    run(Kinogo().downloadMP4('https://kinogo.biz/14939-zvezdnye-vojny-jepizod-1-skrytaja-ugroza.html'))
+    run(main(
+        'https://kinogo.biz/11140-koralina-v-strane-koshmarov.html',
+        'https://kinogo.biz/11126-valli.html'
+    ))
