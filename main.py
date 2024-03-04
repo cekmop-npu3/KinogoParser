@@ -26,11 +26,6 @@ class VideoParams(TypedDict):
     params: dict[int, str]
 
 
-class IframeParams(TypedDict):
-    filmName: str
-    iframeUrl: Optional[str | list]
-
-
 class Cookies(TypedDict):
     __ddg1: str
     PHPSESSID: str
@@ -45,7 +40,7 @@ class Kinogo:
         '__ddg3': 'bUiOBuOEfO5BEPty'
     }
 
-    async def getCookies(self, main_url: str) -> Cookies:
+    async def loadCookies(self, main_url: str) -> Cookies:
         async with ClientSession() as session:
             async with session.get(
                 url=main_url,
@@ -54,17 +49,14 @@ class Kinogo:
             ) as response:
                 return dict(response.cookies)
 
-    async def iframeParams(self, page_url: str) -> IframeParams:
+    async def iframeUrl(self, page_url: str) -> str:
         async with ClientSession() as session:
             async with session.get(
                 url=page_url,
                 headers=self.headers,
                 cookies=self.cookies
             ) as response:
-                return {
-                    'filmName': Bs(await response.text(), 'lxml').find('div', class_='fullstory__title').find('h1').text,
-                    'iframeUrl': Bs(await response.text(), 'lxml').find('ul', class_='js-player-tabs player-tabs').find('li').get('data-src')
-                }
+                return Bs(await response.text(), 'lxml').find('ul', class_='js-player-tabs player-tabs').find('li').get('data-src')
 
     async def streamParams(self, iframe_url: str) -> StreamParams:
         async with ClientSession() as session:
@@ -138,16 +130,15 @@ class Kinogo:
         return f'{path_}/Segments.txt'
 
     async def downloadMP4(self, url: str) -> None:
-        self.cookies.update(**(await self.getCookies(url.split(regex := search(r'(\d+)', url).group())[0])))
+        self.cookies.update(**(await self.loadCookies(url.split(regex := search(r'(\d+)', url).group())[0])))
         self.cookies['viewed_ids'] = regex
-        film_name = (params := await self.iframeParams(url)).get('filmName')
         self.makeDir(path_ := f'Films/{self.cookies.get("viewed_ids")}')
         semaphore = Semaphore(30)
         async with TaskGroup() as tg:
-            [tg.create_task(self.loadFromSegment(semaphore, path_, seg)) for seg in await self.videoSegments(await self.videoParams(await self.redirectUrl(await self.streamParams(params.get('iframeUrl')))))]
-        sub_run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', self.makeTXT(path_), '-c', 'copy', f'Films/{film_name}.mp4'])
+            [tg.create_task(self.loadFromSegment(semaphore, path_, seg)) for seg in await self.videoSegments(await self.videoParams(await self.redirectUrl(await self.streamParams(await self.iframeUrl(url)))))]
+        sub_run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', self.makeTXT(path_), '-c', 'copy', f'Films/{regex}.mp4'])
         rmtree(path_, ignore_errors=True)
 
 
 if __name__ == '__main__':
-    run(Kinogo().downloadMP4('https://kinogo.biz/82065-pchelovod.html'))
+    run(Kinogo().downloadMP4('https://kinogo.biz/14939-zvezdnye-vojny-jepizod-1-skrytaja-ugroza.html'))
