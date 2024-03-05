@@ -103,11 +103,11 @@ class KinoGo(metaclass=Singleton):
             mkdir(path_)
 
     @staticmethod
-    def makeTXT(path_: str | PathLike) -> str | PathLike:
-        with open(f'{path_}/Segments.txt', 'w') as file:
+    async def makeTXT(path_: str | PathLike) -> str | PathLike:
+        async with aio_open(p := f'{path_}/Segments.txt', 'w') as file:
             for file_name in sorted(filter(lambda x: x.endswith('.ts'), listdir(path_)), key=lambda x: int(search(r'\d+', x).group())):
-                file.write(str(f"file '{file_name}'\n"))
-        return f'{path_}/Segments.txt'
+                await file.write(str(f"file '{file_name}'\n"))
+        return p
 
     async def downloadMP4(self, url: str) -> None:
         self.cookies.update(**(await self.loadCookies(url.split(regex := search(r'(\d+)', url).group())[0])))
@@ -116,18 +116,6 @@ class KinoGo(metaclass=Singleton):
         semaphore = Semaphore(30)
         async with TaskGroup() as tg:
             [tg.create_task(self.loadFromSegment(semaphore, path_, seg)) for seg in await self.videoSegments(await self.videoParams(await self.redirectUrl(await self.streamParams(await self.iframeUrl(url)))))]
-        process = await create_subprocess_exec(*['ffmpeg', '-f', 'concat', '-safe', '0', '-i', self.makeTXT(path_), '-c', 'copy', f'Films/{regex}.mp4'])
+        process = await create_subprocess_exec(*['ffmpeg', '-f', 'concat', '-safe', '0', '-i', await self.makeTXT(path_), '-c', 'copy', f'Films/{regex}.mp4'])
         await process.wait()
         rmtree(path_, ignore_errors=True)
-
-
-async def main(*urls) -> None:
-    async with TaskGroup() as tg:
-        [tg.create_task(KinoGo(ApiUtils).downloadMP4(url)) for url in urls]
-
-
-if __name__ == '__main__':
-    run(main(
-        'https://kinogo.biz/11140-koralina-v-strane-koshmarov.html',
-        'https://kinogo.biz/11126-valli.html'
-    ))

@@ -25,7 +25,7 @@ class ApiUtils:
         'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
     }
     cookies = {
-        '__ddg3': 'bUiOBuOEfO5BEPty'
+        '__ddg3': 'krBwcsEVwDS3Op5Z'
     }
 
 
